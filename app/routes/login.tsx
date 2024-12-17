@@ -19,14 +19,12 @@ import { Form, useActionData, useSearchParams } from "@remix-run/react";
 import { useEffect, useRef } from "react";
 
 import {
-  createUser,
-  getUserByEmail,
-  getUserPermissions,
+verifyLogin,
 } from "~/models/user.server";
 import { createUserSession, getUserId } from "~/session.server";
-import { loginSchema } from "~/zod-schemas/schema";
 
 import classes from "~/routes-style/login.module.css";
+import {safeRedirect, validateEmail} from "~/utils";
 
 export const meta: MetaFunction = () => [{ title: "Login" }];
 
@@ -38,67 +36,49 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
-  const { ...form } = Object.fromEntries(formData);
+  const email = formData.get("email");
+  const password = formData.get("password");
+  const redirectTo = safeRedirect(formData.get("redirectTo"), "/");
+  const remember = formData.get("remember");
 
-  const validatedForm = loginSchema.safeParse(form);
-
-  if (!validatedForm.success) {
+  if (!validateEmail(email)) {
     return json(
-      { errors: validatedForm.error.formErrors.fieldErrors },
-      { status: 400 },
+        { errors: { email: "Email is invalid", password: null } },
+        { status: 400 },
     );
   }
 
-  const validatedData = validatedForm.data;
-
-  const loginFormData = new FormData();
-  loginFormData.append("username", validatedData.email);
-  loginFormData.append("password", validatedData.password);
-
-  const response = await fetch(`${process.env.API_URL}`, {
-    method: "POST",
-    body: loginFormData,
-  });
-
-  if (!response.ok) {
+  if (typeof password !== "string" || password.length === 0) {
     return json(
-      { errors: { email: "Invalid username or password", password: null } },
-      { status: 400 },
+        { errors: { email: null, password: "Password is required" } },
+        { status: 400 },
     );
   }
 
-  const data = await response.json();
-
-  if (!data.status && data.is_aduser) {
+  if (password.length < 8) {
     return json(
-      { errors: { email: "Username and password incorrect", password: null } },
-      { status: 400 },
-    );
-  } else if (!data.status && !data.is_aduser) {
-    return json(
-      { errors: { email: "Username and password incorrect", password: null } },
-      { status: 400 },
+        { errors: { email: null, password: "Password is too short" } },
+        { status: 400 },
     );
   }
 
-  let user = await getUserByEmail(validatedData.email);
+  const user = await verifyLogin(email, password);
 
   if (!user) {
-    const userFullName = JSON.parse(data.data).fullname;
-    user = await createUser(validatedData.email, userFullName);
+    return json(
+        { errors: { email: "Invalid email or password", password: null } },
+        { status: 400 },
+    );
   }
 
-  const userPermissions = await getUserPermissions(user.id);
-
   return createUserSession({
-    redirectTo: validatedData.redirectTo,
-    remember: validatedData.remember === "on",
+    redirectTo,
+    remember: remember === "on" ? true : false,
     request,
     userId: user.id,
-    userEmail: user.email,
-    userPermissions,
   });
 };
+
 
 export default function LoginPage() {
   const [searchParams] = useSearchParams();

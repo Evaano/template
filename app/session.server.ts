@@ -72,20 +72,14 @@ export async function createUserSession({
   userId,
   remember,
   redirectTo,
-  userEmail,
-  userPermissions,
 }: {
   request: Request;
   userId: string;
   remember: boolean;
   redirectTo: string;
-  userEmail: string;
-  userPermissions: string[];
 }) {
   const session = await getSession(request);
   session.set(USER_SESSION_KEY, userId);
-  session.set("userEmail", userEmail);
-  session.set("userPermissions", userPermissions);
   return redirect(redirectTo, {
     headers: {
       "Set-Cookie": await sessionStorage.commitSession(session, {
